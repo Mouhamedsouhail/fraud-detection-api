@@ -4,12 +4,13 @@
 
 SentinelPay is a streaming-ready fraud anomaly detection service built with FastAPI, scikit-learn Isolation Forest, Kafka, pandas, numpy, and Docker Compose.
 
-It scores credit card transaction vectors in real time, exposes operational metrics, supports batch scoring, and includes Kafka replay tools for end-to-end fraud event pipelines.
+It scores credit card transaction vectors in real time, exposes operational metrics, supports batch scoring, includes Kafka replay tools, and adds a human-readable analyst persona named **Maya** for fraud triage.
 
 ## Why This Project Stands Out
 
 - **Real API, not just a notebook**: train a model, load it once, serve `/score`, `/score/batch`, `/health`, `/metrics`, and `/model`.
 - **Streaming workflow included**: replay transactions into Kafka and publish enriched fraud results.
+- **Humanoid analyst mode**: Maya converts anomaly scores into severity, review queues, reason codes, and recommended actions.
 - **Demo-friendly**: generate synthetic `creditcard.csv` data when you want to test the pipeline before downloading Kaggle data.
 - **Public-repo ready**: CI, Dockerfile, Makefile, model card, architecture docs, security notes, and contribution guide.
 - **Production-minded defaults**: no hardcoded secrets, environment-based config, ignored datasets/artifacts, and explicit risk-score caveats.
@@ -107,6 +108,8 @@ Open:
 - Health: `http://localhost:8000/health`
 - Metrics: `http://localhost:8000/metrics`
 - Model metadata: `http://localhost:8000/model`
+- Analyst mode: `http://localhost:8000/analyst/score`
+- Analyst console: `http://localhost:8000/analyst/console`
 
 ## Score One Transaction
 
@@ -154,6 +157,38 @@ curl -X POST http://localhost:8000/score/batch \
   ]}'
 ```
 
+## Analyst Mode
+
+Maya is SentinelPay's deterministic fraud analyst layer. She does not use an LLM or any external API. She turns the model output into a human review object:
+
+- `severity`: `LOW`, `ELEVATED`, `HIGH`, or `CRITICAL`
+- `decision_queue`: `auto_approve`, `watchlist`, `manual_review`, or `manual_review_urgent`
+- `analyst.summary`: plain-language triage
+- `reason_codes`: top latent signals and amount signals
+- `recommended_actions`: next best operational steps
+
+```bash
+curl -X POST http://localhost:8000/analyst/score \
+  -H "Content-Type: application/json" \
+  -H "X-Transaction-ID: tx-human" \
+  -d '{
+    "V1": 0.0, "V2": 0.0, "V3": 0.0, "V4": 0.0,
+    "V5": 0.0, "V6": 0.0, "V7": 0.0, "V8": 0.0,
+    "V9": 0.0, "V10": 0.0, "V11": 0.0, "V12": 0.0,
+    "V13": 0.0, "V14": -4.2, "V15": 0.0, "V16": 0.0,
+    "V17": 3.1, "V18": 0.0, "V19": 0.0, "V20": 0.0,
+    "V21": 0.0, "V22": 0.0, "V23": 0.0, "V24": 0.0,
+    "V25": 0.0, "V26": 0.0, "V27": 0.0, "V28": 0.0,
+    "Amount": 7500.0
+  }'
+```
+
+For a local browser view, open:
+
+```text
+http://localhost:8000/analyst/console
+```
+
 ## Stream Transactions
 
 Terminal 1:
@@ -170,6 +205,12 @@ python streaming/consumer.py
 
 The producer publishes rows to `transactions`. The consumer calls `/score`, then publishes the original transaction plus the score response to `fraud-results`.
 
+To publish Maya's analyst-enriched response instead:
+
+```bash
+API_SCORE_PATH=/analyst/score python streaming/consumer.py
+```
+
 ## Configuration
 
 Environment variables are loaded from `.env`.
@@ -178,6 +219,7 @@ Environment variables are loaded from `.env`.
 | --- | --- | --- |
 | `KAFKA_BROKER` | `localhost:9092` | Kafka bootstrap server |
 | `API_URL` | `http://localhost:8000` | FastAPI base URL used by the consumer |
+| `API_SCORE_PATH` | `/score` | Score endpoint used by the consumer |
 | `API_TIMEOUT_SECONDS` | `5` | HTTP timeout for the consumer |
 | `MODEL_PATH` | `model/artifacts/model.pkl` | Model artifact path |
 | `MODEL_VERSION` | `local` | Optional version label stored in metadata |
@@ -224,6 +266,7 @@ The tests monkeypatch a fake model so they run before `creditcard.csv` is downlo
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Model Card](docs/MODEL_CARD.md)
+- [Analyst Mode](docs/ANALYST_MODE.md)
 - [Security Notes](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 

@@ -1,7 +1,7 @@
 [project]
 name = "sentinelpay-fraud-detection-api"
-version = "1.1.0"
-description = "Streaming-ready FastAPI fraud anomaly detection service using Isolation Forest and Kafka."
+version = "1.2.0"
+description = "Streaming-ready FastAPI fraud anomaly detection service with a human-readable analyst layer."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

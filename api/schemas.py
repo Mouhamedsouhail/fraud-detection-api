@@ -88,3 +88,29 @@ class BatchScoreResponse(BaseModel):
     transaction_count: int = Field(..., ge=1)
     scores: list[ScoreResponse]
     latency_ms: float = Field(..., ge=0)
+
+
+class AnalystPersona(BaseModel):
+    name: str
+    role: str
+    summary: str
+
+
+class ReasonCode(BaseModel):
+    code: str
+    signal: str
+    detail: str
+    weight: float = Field(..., ge=0, le=1)
+
+
+class AnalystScoreResponse(BaseModel):
+    transaction_id: str
+    risk_score: float = Field(..., ge=0, le=1)
+    is_fraud: bool
+    label: Literal["SUSPICIOUS", "LEGITIMATE"]
+    severity: Literal["LOW", "ELEVATED", "HIGH", "CRITICAL"]
+    decision_queue: Literal["auto_approve", "watchlist", "manual_review", "manual_review_urgent"]
+    analyst: AnalystPersona
+    reason_codes: list[ReasonCode]
+    recommended_actions: list[str]
+    latency_ms: float = Field(..., ge=0)

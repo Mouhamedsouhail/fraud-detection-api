@@ -20,6 +20,7 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 TRANSACTIONS_TOPIC = os.getenv("TRANSACTIONS_TOPIC", "transactions")
 RESULTS_TOPIC = os.getenv("RESULTS_TOPIC", "fraud-results")
 API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
+API_SCORE_PATH = os.getenv("API_SCORE_PATH", "/score")
 API_TIMEOUT_SECONDS = float(os.getenv("API_TIMEOUT_SECONDS", "5"))
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -34,7 +35,7 @@ def score_with_retry(transaction: dict[str, Any], max_attempts: int = 3) -> dict
     for attempt in range(1, max_attempts + 1):
         try:
             response = requests.post(
-                f"{API_URL}/score",
+                f"{API_URL}{API_SCORE_PATH}",
                 json=payload,
                 headers=headers,
                 timeout=API_TIMEOUT_SECONDS,

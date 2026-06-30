@@ -11,7 +11,7 @@
 
 ## Intended Use
 
-The model is intended to prioritize credit card transactions for fraud review. It should be used as an anomaly signal alongside human review, business rules, and downstream investigation tools.
+The model is intended to prioritize credit card transactions for fraud review. It should be used as an anomaly signal alongside human review, business rules, and downstream investigation tools. Analyst Mode adds human-readable triage, but it does not convert the model into a final fraud authority.
 
 ## Dataset
 
@@ -30,6 +30,7 @@ The intended dataset is the Kaggle ULB credit card fraud dataset, containing 284
 - Fraud behavior changes over time, so thresholds should be monitored and retrained.
 - The Kaggle dataset is anonymized and historical; it does not represent every merchant or payment network.
 - The synthetic demo data generator is only for local smoke testing and presentations.
+- Analyst reason codes for `V1` through `V28` describe anonymized latent signals, not literal customer behaviors.
 
 ## Production Checklist
 
