@@ -4,13 +4,17 @@
 
 SentinelPay is a streaming-ready fraud anomaly detection service built with FastAPI, scikit-learn Isolation Forest, Kafka, pandas, numpy, and Docker Compose.
 
-It scores credit card transaction vectors in real time, exposes operational metrics, supports batch scoring, includes Kafka replay tools, and adds a human-readable analyst persona named **Maya** for fraud triage.
+It scores credit card transaction vectors in real time, exposes operational and Prometheus metrics, supports batch scoring, includes Kafka replay tools, compares unsupervised and supervised models, and adds a human-readable analyst persona named **Maya** for fraud triage.
 
 ## Why This Project Stands Out
 
 - **Real API, not just a notebook**: train a model, load it once, serve `/score`, `/score/batch`, `/health`, `/metrics`, and `/model`.
 - **Streaming workflow included**: replay transactions into Kafka and publish enriched fraud results.
 - **Humanoid analyst mode**: Maya converts anomaly scores into severity, review queues, reason codes, and recommended actions.
+- **Actual model comparison**: training reports PR-AUC, recall at fixed precision, and confusion matrices for Isolation Forest and a supervised logistic baseline.
+- **Ready-to-run API**: the repo includes a tiny synthetic-data demo model so `/score` works immediately after install.
+- **Fraud operations workflow**: analyst cases, dispositions, feedback, and retraining candidates are built into the API.
+- **Monitoring included**: structured JSON logs and Prometheus metrics are exposed without extra services.
 - **Demo-friendly**: generate synthetic `creditcard.csv` data when you want to test the pipeline before downloading Kaggle data.
 - **Public-repo ready**: CI, Dockerfile, Makefile, model card, architecture docs, security notes, and contribution guide.
 - **Production-minded defaults**: no hardcoded secrets, environment-based config, ignored datasets/artifacts, and explicit risk-score caveats.
@@ -34,6 +38,7 @@ fraud-detection-api/
 ├── data/                   # creditcard.csv goes here, ignored by Git
 ├── docs/                   # architecture and model card
 ├── model/                  # training script and artifact directory
+├── reports/                # generated model comparison reports
 ├── scripts/                # local demo utilities
 ├── streaming/              # Kafka producer and consumer
 ├── tests/                  # API and scorer tests
@@ -54,15 +59,29 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Start Kafka and Zookeeper:
+The API can run immediately with the bundled synthetic-data demo model:
 
 ```bash
-docker compose up -d
+uvicorn api.main:app --reload
+```
+
+Open:
+
+```text
+http://localhost:8000/dashboard
+http://localhost:8000/analyst/console
+http://localhost:8000/docs
+```
+
+Start the full Kafka + API + producer + consumer stack:
+
+```bash
+docker compose up --build
 ```
 
 ## Option A: Demo Without Kaggle
 
-Generate synthetic data that matches the Kaggle file shape:
+Generate synthetic data that matches the Kaggle file shape and retrain the local model:
 
 ```bash
 python scripts/generate_demo_data.py --rows 5000 --fraud-rate 0.02
@@ -93,8 +112,10 @@ The training script:
 - scales `Amount` with `StandardScaler`
 - applies SMOTE on the training split
 - trains `IsolationForest(contamination=0.002, n_estimators=200, random_state=42)`
-- prints precision, recall, F1, confusion matrix, training time, and score distribution stats
+- trains a supervised `LogisticRegression(class_weight="balanced")` baseline
+- prints and writes PR-AUC, recall at fixed precision, confusion matrices, training time, and score distribution stats
 - saves `model/artifacts/model.pkl`
+- writes `reports/evaluation.json` and `reports/evaluation.md`
 
 ## Run the API
 
@@ -107,9 +128,11 @@ Open:
 - Swagger UI: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/health`
 - Metrics: `http://localhost:8000/metrics`
+- Prometheus: `http://localhost:8000/metrics/prometheus`
 - Model metadata: `http://localhost:8000/model`
 - Analyst mode: `http://localhost:8000/analyst/score`
 - Analyst console: `http://localhost:8000/analyst/console`
+- Live dashboard: `http://localhost:8000/dashboard`
 
 ## Score One Transaction
 
@@ -211,6 +234,32 @@ To publish Maya's analyst-enriched response instead:
 API_SCORE_PATH=/analyst/score python streaming/consumer.py
 ```
 
+## Investigation Workflow
+
+Maya automatically opens in-memory cases for transactions routed to `watchlist`, `manual_review`, or `manual_review_urgent`.
+
+```bash
+curl http://localhost:8000/cases
+curl http://localhost:8000/events/recent
+curl http://localhost:8000/retraining/candidates
+```
+
+Record disposition:
+
+```bash
+curl -X POST http://localhost:8000/cases/case-tx-human/disposition \
+  -H "Content-Type: application/json" \
+  -d '{"disposition":"CONFIRMED_FRAUD","analyst_id":"analyst-1","notes":"Confirmed after review."}'
+```
+
+Record analyst feedback:
+
+```bash
+curl -X POST http://localhost:8000/cases/case-tx-human/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"analyst_id":"analyst-1","useful":true,"notes":"Reason codes were useful.","corrected_label":"SUSPICIOUS"}'
+```
+
 ## Configuration
 
 Environment variables are loaded from `.env`.
@@ -221,12 +270,14 @@ Environment variables are loaded from `.env`.
 | `API_URL` | `http://localhost:8000` | FastAPI base URL used by the consumer |
 | `API_SCORE_PATH` | `/score` | Score endpoint used by the consumer |
 | `API_TIMEOUT_SECONDS` | `5` | HTTP timeout for the consumer |
-| `MODEL_PATH` | `model/artifacts/model.pkl` | Model artifact path |
+| `MODEL_PATH` | `model/artifacts/demo_model.pkl` | Model artifact path |
 | `MODEL_VERSION` | `local` | Optional version label stored in metadata |
+| `SCORING_MODEL` | `auto` | `auto`, `supervised_baseline`, or `isolation_forest` |
 | `FRAUD_RISK_THRESHOLD` | `0.6` | Fraud flag threshold for normalized risk |
 | `METRICS_WINDOW_SIZE` | `10000` | Number of recent latencies retained |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
 | `LOG_LEVEL` | `INFO` | Python logging level |
+| `STRUCTURED_LOGS` | `true` | Emit JSON application logs |
 
 ## Risk Score Interpretation
 
@@ -267,6 +318,8 @@ The tests monkeypatch a fake model so they run before `creditcard.csv` is downlo
 - [Architecture](docs/ARCHITECTURE.md)
 - [Model Card](docs/MODEL_CARD.md)
 - [Analyst Mode](docs/ANALYST_MODE.md)
+- [Threshold Tuning](docs/THRESHOLD_TUNING.md)
+- [Operations](docs/OPERATIONS.md)
 - [Security Notes](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 

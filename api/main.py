@@ -11,16 +11,32 @@ from typing import Annotated, Any
 
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
-from api.analyst import build_analyst_report
 from api import scorer
+from api.analyst import build_analyst_report
+from api.cases import (
+    add_disposition,
+    add_feedback,
+    get_case,
+    list_cases,
+    maybe_open_case,
+    recent_events,
+    record_score_event,
+    reset_cases,
+    retraining_candidates,
+)
+from api.dashboard import dashboard_html
+from api.logging_config import configure_logging
 from api.schemas import (
     AnalystScoreResponse,
     BatchScoreRequest,
     BatchScoreResponse,
+    CaseDispositionRequest,
+    CaseFeedbackRequest,
     ScoreResponse,
     TransactionInput,
 )
@@ -30,17 +46,34 @@ from api.scorer import ModelNotLoadedError, score as score_transaction
 PROJECT_ROOT = scorer.PROJECT_ROOT
 load_dotenv(PROJECT_ROOT / ".env")
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 APP_STARTED_AT = time.time()
 APP_NAME = "SentinelPay Fraud Detection API"
-APP_VERSION = "1.2.0"
+APP_VERSION = "2.0.0"
 METRICS_WINDOW_SIZE = int(os.getenv("METRICS_WINDOW_SIZE", "10000"))
 _metrics_lock = Lock()
 _total_scored = 0
 _fraud_count = 0
 _latencies_ms: deque[float] = deque(maxlen=METRICS_WINDOW_SIZE)
+SCORES_TOTAL = Counter(
+    "sentinelpay_scores_total",
+    "Total scored transactions.",
+    ["endpoint", "label", "model_name"],
+)
+FRAUD_CASES_TOTAL = Counter(
+    "sentinelpay_cases_total",
+    "Total investigation cases opened.",
+    ["severity", "queue"],
+)
+SCORE_LATENCY_SECONDS = Histogram(
+    "sentinelpay_score_latency_seconds",
+    "Scoring latency in seconds.",
+    ["endpoint"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+)
+FRAUD_RATE_GAUGE = Gauge("sentinelpay_fraud_rate", "In-memory fraud rate.")
 
 cors_origins = [
     origin.strip()
@@ -76,7 +109,13 @@ app.add_middleware(
 )
 
 
-def _record_score(is_fraud: bool, latency_ms: float) -> None:
+def _record_score(
+    is_fraud: bool,
+    latency_ms: float,
+    label: str,
+    endpoint: str,
+    model_name: str = "unknown",
+) -> None:
     global _total_scored, _fraud_count
 
     with _metrics_lock:
@@ -84,6 +123,11 @@ def _record_score(is_fraud: bool, latency_ms: float) -> None:
         if is_fraud:
             _fraud_count += 1
         _latencies_ms.append(float(latency_ms))
+        fraud_rate = (_fraud_count / _total_scored) if _total_scored else 0.0
+
+    SCORES_TOTAL.labels(endpoint=endpoint, label=label, model_name=model_name).inc()
+    SCORE_LATENCY_SECONDS.labels(endpoint=endpoint).observe(float(latency_ms) / 1000.0)
+    FRAUD_RATE_GAUGE.set(fraud_rate)
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -99,6 +143,7 @@ def reset_metrics() -> None:
         _total_scored = 0
         _fraud_count = 0
         _latencies_ms.clear()
+    reset_cases()
 
 
 @app.get("/")
@@ -113,6 +158,8 @@ def root() -> dict[str, Any]:
         "model_url": "/model",
         "analyst_score_url": "/analyst/score",
         "analyst_console_url": "/analyst/console",
+        "dashboard_url": "/dashboard",
+        "prometheus_metrics_url": "/metrics/prometheus",
     }
 
 
@@ -132,7 +179,24 @@ def score_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    _record_score(is_fraud=bool(result["is_fraud"]), latency_ms=float(result["latency_ms"]))
+    _record_score(
+        is_fraud=bool(result["is_fraud"]),
+        latency_ms=float(result["latency_ms"]),
+        label=str(result["label"]),
+        endpoint="/score",
+        model_name=str(result.get("model_name", "unknown")),
+    )
+    record_score_event(result)
+    logger.info(
+        "score_completed",
+        extra={
+            "transaction_id": result["transaction_id"],
+            "risk_score": result["risk_score"],
+            "label": result["label"],
+            "model_name": result.get("model_name", "unknown"),
+            "endpoint": "/score",
+        },
+    )
     return ScoreResponse(**result)
 
 
@@ -144,7 +208,14 @@ def batch_score_endpoint(batch: BatchScoreRequest) -> BatchScoreResponse:
     try:
         for transaction in batch.transactions:
             result = score_transaction(transaction.model_dump())
-            _record_score(is_fraud=bool(result["is_fraud"]), latency_ms=float(result["latency_ms"]))
+            _record_score(
+                is_fraud=bool(result["is_fraud"]),
+                latency_ms=float(result["latency_ms"]),
+                label=str(result["label"]),
+                endpoint="/score/batch",
+                model_name=str(result.get("model_name", "unknown")),
+            )
+            record_score_event(result)
             scores.append(ScoreResponse(**result))
     except ModelNotLoadedError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -174,11 +245,29 @@ def analyst_score_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    report = build_analyst_report(payload, score_result)
     _record_score(
         is_fraud=bool(score_result["is_fraud"]),
         latency_ms=float(score_result["latency_ms"]),
+        label=str(score_result["label"]),
+        endpoint="/analyst/score",
+        model_name=str(score_result.get("model_name", "unknown")),
     )
-    return AnalystScoreResponse(**build_analyst_report(payload, score_result))
+    record_score_event(score_result, report)
+    case = maybe_open_case(payload, report)
+    if case:
+        FRAUD_CASES_TOTAL.labels(severity=case["severity"], queue=case["queue"]).inc()
+    logger.info(
+        "analyst_score_completed",
+        extra={
+            "transaction_id": report["transaction_id"],
+            "risk_score": report["risk_score"],
+            "severity": report["severity"],
+            "decision_queue": report["decision_queue"],
+            "endpoint": "/analyst/score",
+        },
+    )
+    return AnalystScoreResponse(**report)
 
 
 @app.get("/analyst/console", response_class=HTMLResponse)
@@ -400,6 +489,73 @@ def analyst_console() -> str:
 """
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    return dashboard_html()
+
+
+@app.get("/events/recent")
+def get_recent_events(limit: int = 50) -> list[dict[str, Any]]:
+    return recent_events(limit)
+
+
+@app.get("/cases")
+def get_cases(status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    return list_cases(status=status, limit=limit)
+
+
+@app.get("/cases/{case_id}")
+def get_case_endpoint(case_id: str) -> dict[str, Any]:
+    case = get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return case
+
+
+@app.post("/cases/{case_id}/disposition")
+def disposition_endpoint(case_id: str, request: CaseDispositionRequest) -> dict[str, Any]:
+    case = add_disposition(
+        case_id=case_id,
+        disposition=request.disposition,
+        analyst_id=request.analyst_id,
+        notes=request.notes,
+    )
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    logger.info(
+        "case_disposition_recorded",
+        extra={
+            "case_id": case_id,
+            "disposition": request.disposition,
+            "analyst_id": request.analyst_id,
+        },
+    )
+    return case
+
+
+@app.post("/cases/{case_id}/feedback")
+def feedback_endpoint(case_id: str, request: CaseFeedbackRequest) -> dict[str, Any]:
+    case = add_feedback(
+        case_id=case_id,
+        analyst_id=request.analyst_id,
+        useful=request.useful,
+        notes=request.notes,
+        corrected_label=request.corrected_label,
+    )
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    logger.info(
+        "case_feedback_recorded",
+        extra={"case_id": case_id, "analyst_id": request.analyst_id, "useful": request.useful},
+    )
+    return case
+
+
+@app.get("/retraining/candidates")
+def retraining_candidates_endpoint() -> list[dict[str, Any]]:
+    return retraining_candidates()
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     status = scorer.model_status()
@@ -439,3 +595,8 @@ def metrics() -> dict[str, Any]:
         "metrics_window_size": METRICS_WINDOW_SIZE,
         "uptime_seconds": round(time.time() - APP_STARTED_AT, 4),
     }
+
+
+@app.get("/metrics/prometheus")
+def prometheus_metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

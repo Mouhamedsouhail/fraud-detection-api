@@ -1,0 +1,103 @@
+{
+  "project": "SentinelPay",
+  "created_at": 1782822571.2811,
+  "dataset": {
+    "path": "C:\\Users\\souha\\Documents\\Codex\\2026-06-30\\build-a-real-time-fraud-detection\\outputs\\fraud-detection-api\\..\\..\\work\\sentinelpay_demo_creditcard.csv",
+    "rows": 3000,
+    "fraud_count": 75,
+    "fraud_rate": 0.025
+  },
+  "target_precision": 0.8,
+  "risk_threshold": 0.6,
+  "raw_iforest_metrics": {
+    "threshold": -0.1,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "confusion_matrix": [
+      [
+        585,
+        0
+      ],
+      [
+        15,
+        0
+      ]
+    ]
+  },
+  "model_metrics": [
+    {
+      "model": "isolation_forest",
+      "pr_auc": 0.0536,
+      "confusion_at_risk_threshold": {
+        "threshold": 0.6,
+        "precision": 0.0534,
+        "recall": 0.4667,
+        "f1": 0.0959,
+        "confusion_matrix": [
+          [
+            461,
+            124
+          ],
+          [
+            8,
+            7
+          ]
+        ]
+      },
+      "recall_at_fixed_precision": {
+        "target_precision": 0.8,
+        "precision": 0.0,
+        "recall": 0.0,
+        "threshold": 1.0
+      },
+      "risk_score_distribution": {
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.4486,
+        "p01": 0.0411,
+        "p05": 0.1442,
+        "p50": 0.4297,
+        "p95": 0.8199,
+        "p99": 0.9317
+      }
+    },
+    {
+      "model": "supervised_baseline",
+      "pr_auc": 1.0,
+      "confusion_at_risk_threshold": {
+        "threshold": 0.6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "confusion_matrix": [
+          [
+            585,
+            0
+          ],
+          [
+            0,
+            15
+          ]
+        ]
+      },
+      "recall_at_fixed_precision": {
+        "target_precision": 0.8,
+        "recall": 1.0,
+        "threshold": 0.0833,
+        "precision": 0.8333
+      },
+      "risk_score_distribution": {
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.0289,
+        "p01": 0.0,
+        "p05": 0.0001,
+        "p50": 0.001,
+        "p95": 0.0318,
+        "p99": 0.9997
+      }
+    }
+  ],
+  "recommended_default_model": "supervised_baseline"
+}

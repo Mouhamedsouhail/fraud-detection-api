@@ -11,6 +11,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY api ./api
 COPY model ./model
+COPY reports ./reports
 COPY streaming ./streaming
 COPY scripts ./scripts
 COPY .env.example .

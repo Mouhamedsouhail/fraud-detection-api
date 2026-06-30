@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0
+
+- Added supervised logistic baseline training beside Isolation Forest.
+- Added PR-AUC, recall at fixed precision, and confusion matrix reports.
+- Added a bundled synthetic-data demo model for immediate API startup.
+- Added Prometheus metrics at `/metrics/prometheus`.
+- Added structured JSON logging.
+- Added live dashboard at `/dashboard`.
+- Added investigation cases, dispositions, analyst feedback, and retraining candidate endpoints.
+- Expanded Docker Compose to run API, Kafka, producer, and consumer as a full stack.
+
 ## 1.2.0
 
 - Added Sentinel Analyst mode with a named analyst persona, severity, decision queues, reason codes, and recommended actions.

@@ -47,3 +47,56 @@ services:
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transactions --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic fraud-results --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --list
+
+  api:
+    build: .
+    container_name: fraud-api
+    depends_on:
+      kafka-topic-init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PATH: model/artifacts/demo_model.pkl
+      SCORING_MODEL: auto
+      KAFKA_BROKER: kafka:29092
+      STRUCTURED_LOGS: "true"
+      LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  producer:
+    build: .
+    container_name: fraud-producer
+    depends_on:
+      kafka-topic-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PRODUCER_RATE: ${PRODUCER_RATE:-25}
+      DEMO_ROWS: ${DEMO_ROWS:-5000}
+      DEMO_FRAUD_RATE: ${DEMO_FRAUD_RATE:-0.02}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        python scripts/generate_demo_data.py --rows $${DEMO_ROWS:-5000} --fraud-rate $${DEMO_FRAUD_RATE:-0.02} --output data/creditcard.csv
+        python streaming/producer.py --rate $${PRODUCER_RATE:-25}
+
+  consumer:
+    build: .
+    container_name: fraud-consumer
+    depends_on:
+      api:
+        condition: service_healthy
+      kafka-topic-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKER: kafka:29092
+      API_URL: http://api:8000
+      API_SCORE_PATH: /analyst/score
+      STRUCTURED_LOGS: "true"
+      LOG_LEVEL: INFO

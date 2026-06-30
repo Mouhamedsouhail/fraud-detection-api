@@ -37,3 +37,6 @@ jobs:
 
       - name: Validate Docker Compose
         run: docker compose config
+
+      - name: Build API image
+        run: docker build -t sentinelpay-fraud-api:ci .

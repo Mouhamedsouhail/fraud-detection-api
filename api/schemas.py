@@ -74,6 +74,8 @@ class TransactionInput(BaseModel):
 
 class ScoreResponse(BaseModel):
     transaction_id: str
+    model_name: str = "unknown"
+    raw_anomaly_score: float | None = None
     risk_score: float = Field(..., ge=0, le=1)
     is_fraud: bool
     label: Literal["SUSPICIOUS", "LEGITIMATE"]
@@ -114,3 +116,16 @@ class AnalystScoreResponse(BaseModel):
     reason_codes: list[ReasonCode]
     recommended_actions: list[str]
     latency_ms: float = Field(..., ge=0)
+
+
+class CaseDispositionRequest(BaseModel):
+    disposition: Literal["CONFIRMED_FRAUD", "FALSE_POSITIVE", "CUSTOMER_VERIFIED", "ESCALATED"]
+    analyst_id: str = Field(..., min_length=1)
+    notes: str = ""
+
+
+class CaseFeedbackRequest(BaseModel):
+    analyst_id: str = Field(..., min_length=1)
+    useful: bool
+    notes: str = ""
+    corrected_label: Literal["SUSPICIOUS", "LEGITIMATE"] | None = None

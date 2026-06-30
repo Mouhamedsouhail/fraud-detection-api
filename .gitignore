@@ -12,3 +12,8 @@ dist/
 build/
 data/*.csv
 model/artifacts/*.pkl
+!model/artifacts/demo_model.pkl
+reports/*.json
+reports/*.md
+!reports/demo_evaluation.json
+!reports/demo_evaluation.md

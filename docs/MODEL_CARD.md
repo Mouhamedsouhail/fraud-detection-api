@@ -3,8 +3,8 @@
 ## Model
 
 - Name: SentinelPay Isolation Forest
-- Type: Unsupervised anomaly detection
-- Library: scikit-learn `IsolationForest`
+- Type: Unsupervised anomaly detection plus supervised baseline
+- Libraries: scikit-learn `IsolationForest`, `LogisticRegression`
 - Default contamination: `0.002`
 - Default estimators: `200`
 - Risk threshold: normalized `risk_score > 0.6`
@@ -16,6 +16,8 @@ The model is intended to prioritize credit card transactions for fraud review. I
 ## Dataset
 
 The intended dataset is the Kaggle ULB credit card fraud dataset, containing 284,807 European cardholder transactions across two days with 492 fraud cases. The repository does not include this dataset. Users must download it separately from Kaggle.
+
+The repository includes a small synthetic-data demo artifact so the API starts immediately. That artifact is for product demonstration only.
 
 ## Features
 
@@ -31,6 +33,18 @@ The intended dataset is the Kaggle ULB credit card fraud dataset, containing 284
 - The Kaggle dataset is anonymized and historical; it does not represent every merchant or payment network.
 - The synthetic demo data generator is only for local smoke testing and presentations.
 - Analyst reason codes for `V1` through `V28` describe anonymized latent signals, not literal customer behaviors.
+- The in-memory case workflow is not an audit-compliant case management system.
+
+## Evaluation
+
+Training writes:
+
+```text
+reports/evaluation.json
+reports/evaluation.md
+```
+
+The reports compare Isolation Forest and the supervised baseline using PR-AUC, recall at fixed precision, and confusion matrices.
 
 ## Production Checklist
 
