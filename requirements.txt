@@ -1,0 +1,12 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+scikit-learn>=1.5.0
+imbalanced-learn>=0.12.3
+confluent-kafka>=2.4.0
+pandas>=2.2.2
+numpy>=1.26.4
+joblib>=1.4.2
+python-dotenv>=1.0.1
+pytest>=8.2.2
+httpx>=0.27.0
+requests>=2.32.3
