@@ -16,12 +16,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
 FEATURE_COLUMNS: list[str] = [f"V{i}" for i in range(1, 29)] + ["Amount"]
+PROJECT_NAME = "SentinelPay"
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "model" / "artifacts" / "model.pkl"
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(DEFAULT_MODEL_PATH)))
 if not MODEL_PATH.is_absolute():
     MODEL_PATH = PROJECT_ROOT / MODEL_PATH
 
 FRAUD_RISK_THRESHOLD = float(os.getenv("FRAUD_RISK_THRESHOLD", "0.6"))
+DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", "local")
 
 MODEL_BUNDLE: dict[str, Any] | None = None
 MODEL_LOAD_ERROR: str | None = None
@@ -80,6 +82,38 @@ def model_status() -> dict[str, Any]:
         "model_path": str(MODEL_PATH),
         "model_load_error": MODEL_LOAD_ERROR,
         "model_loaded_at": round(MODEL_LOADED_AT, 4) if MODEL_LOADED_AT else None,
+        "project": PROJECT_NAME,
+    }
+
+
+def model_metadata() -> dict[str, Any]:
+    if MODEL_BUNDLE is None:
+        return {
+            **model_status(),
+            "model_type": None,
+            "model_version": DEFAULT_MODEL_VERSION,
+            "feature_count": len(FEATURE_COLUMNS),
+            "risk_threshold": round(FRAUD_RISK_THRESHOLD, 4),
+        }
+
+    feature_columns = list(MODEL_BUNDLE.get("feature_columns", FEATURE_COLUMNS))
+    return {
+        **model_status(),
+        "model_type": type(MODEL_BUNDLE["model"]).__name__,
+        "model_version": str(MODEL_BUNDLE.get("model_version", DEFAULT_MODEL_VERSION)),
+        "feature_count": len(feature_columns),
+        "features": feature_columns,
+        "risk_threshold": round(FRAUD_RISK_THRESHOLD, 4),
+        "raw_score_threshold": round(float(MODEL_BUNDLE.get("raw_score_threshold", -0.1)), 4),
+        "score_min": round(float(MODEL_BUNDLE.get("score_min", -0.5)), 4),
+        "score_max": round(float(MODEL_BUNDLE.get("score_max", 0.5)), 4),
+        "training_metrics": MODEL_BUNDLE.get("training_metrics", {}),
+        "score_distribution": MODEL_BUNDLE.get("score_distribution", {}),
+        "created_at": (
+            round(float(MODEL_BUNDLE["created_at"]), 4)
+            if MODEL_BUNDLE.get("created_at") is not None
+            else None
+        ),
     }
 
 

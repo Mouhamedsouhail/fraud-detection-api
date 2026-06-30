@@ -1,31 +1,85 @@
-# Fraud Detection API
+# SentinelPay Fraud Detection API
 
-Real-time fraud scoring API using FastAPI, scikit-learn Isolation Forest, Kafka, pandas, numpy, and joblib.
+[![CI](https://github.com/Mouhamedsouhail/fraud-detection-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Mouhamedsouhail/fraud-detection-api/actions/workflows/ci.yml)
 
-## Setup
+SentinelPay is a streaming-ready fraud anomaly detection service built with FastAPI, scikit-learn Isolation Forest, Kafka, pandas, numpy, and Docker Compose.
 
-Use Python 3.11 or newer.
+It scores credit card transaction vectors in real time, exposes operational metrics, supports batch scoring, and includes Kafka replay tools for end-to-end fraud event pipelines.
+
+## Why This Project Stands Out
+
+- **Real API, not just a notebook**: train a model, load it once, serve `/score`, `/score/batch`, `/health`, `/metrics`, and `/model`.
+- **Streaming workflow included**: replay transactions into Kafka and publish enriched fraud results.
+- **Demo-friendly**: generate synthetic `creditcard.csv` data when you want to test the pipeline before downloading Kaggle data.
+- **Public-repo ready**: CI, Dockerfile, Makefile, model card, architecture docs, security notes, and contribution guide.
+- **Production-minded defaults**: no hardcoded secrets, environment-based config, ignored datasets/artifacts, and explicit risk-score caveats.
+
+## Stack
+
+- Python 3.11+
+- FastAPI
+- scikit-learn Isolation Forest
+- imbalanced-learn SMOTE
+- Kafka via `confluent-kafka-python`
+- Docker Compose for Kafka and Zookeeper
+- pandas, numpy, joblib
+- pytest
+
+## Project Structure
+
+```text
+fraud-detection-api/
+├── api/                    # FastAPI app, schemas, model scoring
+├── data/                   # creditcard.csv goes here, ignored by Git
+├── docs/                   # architecture and model card
+├── model/                  # training script and artifact directory
+├── scripts/                # local demo utilities
+├── streaming/              # Kafka producer and consumer
+├── tests/                  # API and scorer tests
+├── docker-compose.yml      # Kafka + Zookeeper + topic init
+├── Dockerfile              # API container image
+├── Makefile                # common developer commands
+└── requirements.txt
+```
+
+## Quick Start
 
 ```bash
+git clone https://github.com/Mouhamedsouhail/fraud-detection-api.git
 cd fraud-detection-api
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
+```
+
+Start Kafka and Zookeeper:
+
+```bash
 docker compose up -d
 ```
 
-Download the Kaggle ULB credit card fraud dataset and place the CSV at:
+## Option A: Demo Without Kaggle
+
+Generate synthetic data that matches the Kaggle file shape:
+
+```bash
+python scripts/generate_demo_data.py --rows 5000 --fraud-rate 0.02
+python model/train.py
+uvicorn api.main:app --reload
+```
+
+The synthetic generator is for local demos only. It is intentionally not a substitute for real model evaluation.
+
+## Option B: Use the Kaggle ULB Dataset
+
+Download the dataset from [Credit Card Fraud Detection - Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it at:
 
 ```text
 data/creditcard.csv
 ```
 
-Dataset link: [Credit Card Fraud Detection - Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-
-The dataset contains anonymized PCA features `V1` through `V28`, `Time`, `Amount`, and `Class`.
-
-## Train
+Then train:
 
 ```bash
 python model/train.py
@@ -34,26 +88,27 @@ python model/train.py
 The training script:
 
 - drops `Time`
+- keeps `V1` through `V28`, `Amount`, and `Class`
 - scales `Amount` with `StandardScaler`
-- applies SMOTE to the training split
+- applies SMOTE on the training split
 - trains `IsolationForest(contamination=0.002, n_estimators=200, random_state=42)`
-- evaluates precision, recall, F1, and confusion matrix at raw score threshold `-0.1`
+- prints precision, recall, F1, confusion matrix, training time, and score distribution stats
 - saves `model/artifacts/model.pkl`
 
-## Run API
+## Run the API
 
 ```bash
 uvicorn api.main:app --reload
 ```
 
-Health and metrics:
+Open:
 
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/metrics
-```
+- Swagger UI: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
+- Metrics: `http://localhost:8000/metrics`
+- Model metadata: `http://localhost:8000/model`
 
-Example scoring request:
+## Score One Transaction
 
 ```bash
 curl -X POST http://localhost:8000/score \
@@ -71,45 +126,107 @@ curl -X POST http://localhost:8000/score \
   }'
 ```
 
-## Stream
+Example response:
 
-Run the producer in one terminal:
+```json
+{
+  "transaction_id": "demo-001",
+  "risk_score": 0.3821,
+  "is_fraud": false,
+  "label": "LEGITIMATE",
+  "latency_ms": 2.1049
+}
+```
+
+## Batch Score
+
+```bash
+curl -X POST http://localhost:8000/score/batch \
+  -H "Content-Type: application/json" \
+  -d '{"transactions": [
+    {
+      "V1": 0, "V2": 0, "V3": 0, "V4": 0, "V5": 0, "V6": 0, "V7": 0,
+      "V8": 0, "V9": 0, "V10": 0, "V11": 0, "V12": 0, "V13": 0, "V14": 0,
+      "V15": 0, "V16": 0, "V17": 0, "V18": 0, "V19": 0, "V20": 0, "V21": 0,
+      "V22": 0, "V23": 0, "V24": 0, "V25": 0, "V26": 0, "V27": 0, "V28": 0,
+      "Amount": 42
+    }
+  ]}'
+```
+
+## Stream Transactions
+
+Terminal 1:
 
 ```bash
 python streaming/producer.py --rate 50
 ```
 
-Run the consumer in another terminal:
+Terminal 2:
 
 ```bash
 python streaming/consumer.py
 ```
 
-The producer publishes transactions to `transactions`. The consumer calls `/score`, then publishes the original transaction plus the score response to `fraud-results`.
+The producer publishes rows to `transactions`. The consumer calls `/score`, then publishes the original transaction plus the score response to `fraud-results`.
 
 ## Configuration
 
-Environment variables are loaded from `.env` with `python-dotenv`.
+Environment variables are loaded from `.env`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `KAFKA_BROKER` | `localhost:9092` | Kafka bootstrap server |
 | `API_URL` | `http://localhost:8000` | FastAPI base URL used by the consumer |
+| `API_TIMEOUT_SECONDS` | `5` | HTTP timeout for the consumer |
 | `MODEL_PATH` | `model/artifacts/model.pkl` | Model artifact path |
+| `MODEL_VERSION` | `local` | Optional version label stored in metadata |
 | `FRAUD_RISK_THRESHOLD` | `0.6` | Fraud flag threshold for normalized risk |
 | `METRICS_WINDOW_SIZE` | `10000` | Number of recent latencies retained |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
+| `LOG_LEVEL` | `INFO` | Python logging level |
 
-## Risk Scores
+## Risk Score Interpretation
 
-The original Kaggle dataset has an expected fraud rate of about 0.17 percent, so fraud alerts should be rare. The API maps the Isolation Forest decision score to a normalized `risk_score` from `0` to `1`, where higher means more anomalous. A transaction is labeled `SUSPICIOUS` when `risk_score > 0.6`; otherwise it is `LEGITIMATE`.
+The Kaggle ULB dataset has an expected fraud rate of about **0.17%**, so fraud alerts should be rare. SentinelPay maps the Isolation Forest decision score to a normalized `risk_score` from `0` to `1`, where higher means more anomalous. A transaction is labeled `SUSPICIOUS` when:
 
-This score is an anomaly signal, not proof of fraud. Tune the threshold against validation data and operational review capacity before using it in production.
+```text
+risk_score > 0.6
+```
+
+This score is an anomaly signal, not proof of fraud. Tune thresholds against validation data and analyst review capacity before using it in production.
+
+## Developer Commands
+
+```bash
+make install
+make demo-data
+make train
+make test
+make compile
+make compose-up
+make api
+```
+
+On Windows without `make`, run the equivalent commands shown in the Makefile.
 
 ## Tests
 
 ```bash
 pytest
+python -m compileall api model streaming scripts tests
+docker compose config
 ```
 
-The tests monkeypatch a fake model so they can run before `creditcard.csv` is downloaded and before `model.pkl` exists.
+The tests monkeypatch a fake model so they run before `creditcard.csv` is downloaded and before `model.pkl` exists.
+
+## Docs
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Model Card](docs/MODEL_CARD.md)
+- [Security Notes](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+
+## License
+
+MIT

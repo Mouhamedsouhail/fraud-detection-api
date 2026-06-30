@@ -3,8 +3,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 .env
-data/creditcard.csv
+dist/
+build/
+data/*.csv
 model/artifacts/*.pkl

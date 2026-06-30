@@ -1,0 +1,14 @@
+[project]
+name = "sentinelpay-fraud-detection-api"
+version = "1.1.0"
+description = "Streaming-ready FastAPI fraud anomaly detection service using Isolation Forest and Kafka."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Mouhamedsouhail" }]
+keywords = ["fraud-detection", "fastapi", "kafka", "scikit-learn", "anomaly-detection"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

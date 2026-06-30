@@ -66,7 +66,7 @@ def publish_result(
     result = {
         "score": score_response,
         "transaction": transaction,
-        "processed_at": time.time(),
+        "processed_at": round(time.time(), 4),
     }
     producer.produce(
         RESULTS_TOPIC,
